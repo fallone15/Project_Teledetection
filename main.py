@@ -8,7 +8,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 
 from download_from_cdse import query_id
-from spectral_index import apply_ndvi
+from spectral_index import apply_ndvi, apply_crswir
 from preprocess import (
     digital_numbers_to_reflectance,
     apply_cloud_mask,
@@ -16,6 +16,7 @@ from preprocess import (
 )
 from utils import dates_to_days
 from harmonic_regression import fit_harmonic_model, pred_harmonic_model
+from anomaly_detection import detect_dieback
 
 if __name__ == "__main__":
     with open('cdse_query.yaml', 'r', encoding='utf-8') as file:
@@ -56,12 +57,16 @@ if __name__ == "__main__":
         train_ts[date]['NDVI'] = apply_ndvi(
             train_ts[date], preprocess=digital_numbers_to_reflectance
         )
+        train_ts[date]['CRSWIR'] = apply_crswir(
+            train_ts[date], preprocess=digital_numbers_to_reflectance
+        )
 
-        # Étape 2 : appliquer le masque au NDVI et à l'image RGB
+        # Étape 2 : appliquer le masque au NDVI, au CRSWIR et à l'image RGB
         mask = apply_cloud_mask(
             train_ts[date], preprocess=digital_numbers_to_reflectance
         )
         train_ts[date]['NDVI'][mask] = np.nan
+        train_ts[date]['CRSWIR'][mask] = np.nan
         train_ts[date]['RGB'] = apply_rgb_compo(
             train_ts[date],
             preprocess=digital_numbers_to_reflectance,
@@ -77,18 +82,17 @@ if __name__ == "__main__":
         np.array([datetime.strptime(date, '%Y-%m-%d') for date in train_ts])
     )
 
-    # Make a raster of size (n_days, height, width) of NDVI
-    ndvi_array = np.array([train_ts[date]['NDVI'] for date in train_ts])
-    height, width = ndvi_array.shape[1], ndvi_array.shape[2]
+    # Make a raster of size (n_days, height, width) of CRSWIR
+    crswir_array = np.array([train_ts[date]['CRSWIR'] for date in train_ts])
+    height, width = crswir_array.shape[1], crswir_array.shape[2]
     px_coords = height // 2, width // 2
 
-    # Plot the NDVI time series
+    # Plot the CRSWIR time series
     fig, ax = plt.subplots()
     fontsize = 15
-    ndvi_px = ndvi_array[:, px_coords[0], px_coords[1]]
-    ax.scatter(days, ndvi_px, color="#8fc0a9")
-    ax.set_ylabel("NDVI", fontsize=fontsize)
-    ax.set_ylim([-1, 1])
+    crswir_px = crswir_array[:, px_coords[0], px_coords[1]]
+    ax.scatter(days, crswir_px, color="#e67e22")
+    ax.set_ylabel("CRSWIR", fontsize=fontsize)
     xticks = np.arange(len(dates))[::6]
     xticklabels = dates[xticks]
     ax.set_xticks(days[xticks], labels=xticklabels, rotation=45)
@@ -116,14 +120,14 @@ if __name__ == "__main__":
 
     plt.show()
 
-    # ===== Étape 3 : Régression harmonique sur les données 2016 =====
+    # ===== Étape 3 : Régression harmonique sur le CRSWIR 2016 =====
 
-    # Masques : True = pixel invalide (NaN dans le NDVI)
-    masks_array = np.isnan(ndvi_array)
+    # Masques : True = pixel invalide (NaN dans le CRSWIR)
+    masks_array = np.isnan(crswir_array)
 
     # Fit du modèle sur tous les pixels de l'image
-    print("Fitting du modèle harmonique...")
-    harmonic_model = fit_harmonic_model(days, ndvi_array, masks_array)
+    print("Fitting du modèle harmonique sur CRSWIR...")
+    harmonic_model = fit_harmonic_model(days, crswir_array, masks_array)
     print("Fit terminé !")
 
     # Prédictions sur les mêmes dates (pour visualiser l'ajustement)
@@ -131,21 +135,20 @@ if __name__ == "__main__":
     ts_hat = predictions['ts_hat']
     pred_interval = predictions['prediction_interval']
 
-    # === Plot 1 : NDVI observé vs modèle pour le pixel central ===
+    # === Plot 1 : CRSWIR observé vs modèle pour le pixel central ===
     fig, ax = plt.subplots(figsize=(12, 5))
     r, c = px_coords
 
-    ndvi_px = ndvi_array[:, r, c]
+    crswir_px = crswir_array[:, r, c]
     hat_px = ts_hat[:, r, c]
     pi_px = pred_interval[:, r, c]
 
-    ax.scatter(days, ndvi_px, color="#8fc0a9", label="NDVI observé", zorder=3)
+    ax.scatter(days, crswir_px, color="#e67e22", label="CRSWIR observé", zorder=3)
     ax.plot(days, hat_px, color="#c83349", linewidth=2, label="Modèle harmonique")
     ax.fill_between(days, hat_px - pi_px, hat_px + pi_px,
                      color="#c83349", alpha=0.15, label="Intervalle de prédiction 95%")
-    ax.set_ylabel("NDVI", fontsize=15)
-    ax.set_ylim([-0.2, 1.1])
-    ax.set_title(f"Régression harmonique — pixel ({r}, {c})")
+    ax.set_ylabel("CRSWIR", fontsize=15)
+    ax.set_title(f"Régression harmonique CRSWIR — pixel ({r}, {c})")
     xticks = np.arange(len(dates))[::6]
     ax.set_xticks(days[xticks], labels=dates[xticks], rotation=45)
     ax.xaxis.grid(True, which="major", linestyle="dashed")
@@ -156,7 +159,7 @@ if __name__ == "__main__":
     coeff = harmonic_model['coeff']
     amplitude = np.sqrt(coeff[1]**2 + coeff[2]**2)
     std = harmonic_model['std_hat']
-    print(f"a0 (moyenne NDVI)  : min={np.nanmin(coeff[0]):.3f}  max={np.nanmax(coeff[0]):.3f}  median={np.nanmedian(coeff[0]):.3f}")
+    print(f"a0 (moyenne CRSWIR): min={np.nanmin(coeff[0]):.3f}  max={np.nanmax(coeff[0]):.3f}  median={np.nanmedian(coeff[0]):.3f}")
     print(f"Amplitude          : min={np.nanmin(amplitude):.3f}  max={np.nanmax(amplitude):.3f}  median={np.nanmedian(amplitude):.3f}")
     print(f"σ̂ (résidus)        : min={np.nanmin(std):.3f}  max={np.nanmax(std):.3f}  median={np.nanmedian(std):.3f}")
     print(f"Degrés de liberté  : min={np.nanmin(harmonic_model['df']):.0f}  max={np.nanmax(harmonic_model['df']):.0f}")
@@ -164,8 +167,8 @@ if __name__ == "__main__":
     # === Plot 2 : Carte des coefficients du modèle ===
     fig, axs = plt.subplots(1, 3, figsize=(15, 4))
 
-    im0 = axs[0].imshow(coeff[0], cmap='YlGn', vmin=0, vmax=1)
-    axs[0].set_title("a₀ — Moyenne NDVI annuelle")
+    im0 = axs[0].imshow(coeff[0], cmap='YlOrBr', vmin=np.nanpercentile(coeff[0], 2), vmax=np.nanpercentile(coeff[0], 98))
+    axs[0].set_title("a₀ — Moyenne CRSWIR annuelle")
     plt.colorbar(im0, ax=axs[0], shrink=0.8)
 
     im1 = axs[1].imshow(amplitude, cmap='OrRd', vmin=0, vmax=np.nanpercentile(amplitude, 98))
@@ -179,7 +182,114 @@ if __name__ == "__main__":
     for ax in axs:
         ax.set_xticks([])
         ax.set_yticks([])
-    fig.suptitle("Paramètres du modèle harmonique", fontsize=14)
+    fig.suptitle("Paramètres du modèle harmonique (CRSWIR)", fontsize=14)
     fig.tight_layout()
 
     plt.show()
+
+    # ===== Étape 5 : Détection du dépérissement forestier sur 2018 =====
+    if len(years) > 1:
+        print("\n===== Étape 5 : Détection du dépérissement sur les données 2018 =====")
+        test_data_folder = os.path.join(data_folder, years[1])
+
+        with open(os.path.join(test_data_folder, bands[0], 'job-results.json'), 'r') as f:
+            job_results_2018 = json.load(f)
+
+        img_files_2018 = list(job_results_2018['assets'].keys())
+        img_dates_2018 = sorted([file.split('_')[-1].split('Z')[0] for file in img_files_2018])
+
+        print(f"Chargement de {len(img_dates_2018)} images Sentinel-2 pour l'année 2018...")
+        test_ts = {}
+        for date in img_dates_2018:
+            test_ts[date] = dict(
+                (
+                    band,
+                    rasterio.open(
+                        os.path.join(
+                            test_data_folder,
+                            band,
+                            f'SENTINEL2_L2A_{band}_{date}Z.tif',
+                        )
+                    ),
+                )
+                for band in bands
+            )
+
+            # Calcul du CRSWIR 2018
+            test_ts[date]['CRSWIR'] = apply_crswir(
+                test_ts[date], preprocess=digital_numbers_to_reflectance
+            )
+
+            # Masquage nuages / non-végétation
+            mask = apply_cloud_mask(
+                test_ts[date], preprocess=digital_numbers_to_reflectance
+            )
+            test_ts[date]['CRSWIR'][mask] = np.nan
+            test_ts[date]['mask'] = mask
+
+            for band in bands:
+                test_ts[date][band].close()
+
+        dates_2018 = np.array(list(test_ts.keys()))
+        days_2018 = dates_to_days(
+            np.array([datetime.strptime(date, '%Y-%m-%d') for date in test_ts])
+        )
+
+        crswir_2018 = np.array([test_ts[date]['CRSWIR'] for date in test_ts])
+        masks_2018 = np.isnan(crswir_2018)
+
+        # 1. Prédire le comportement normal attendu en 2018 avec le modèle harmonique 2016
+        print("Prédiction des valeurs de référence pour 2018 avec le modèle harmonique...")
+        pred_2018 = pred_harmonic_model(days_2018, harmonic_model)
+        ts_hat_2018 = pred_2018['ts_hat']
+        pi_2018 = pred_2018['prediction_interval']
+
+        # 2. Détection des anomalies de dépérissement (CRSWIR_obs > seuil haut à 95%)
+        print("Détection des anomalies de dépérissement (detect_dieback)...")
+        dieback_results = detect_dieback(crswir_2018, ts_hat_2018, pi_2018, masks_2018)
+
+        n_pixels_total = dieback_results['dieback_map'].size
+        n_pixels_dieback = np.sum(dieback_results['dieback_map'])
+        pct_dieback = (n_pixels_dieback / n_pixels_total) * 100
+        print(f"Résultats 2018 : {n_pixels_dieback} pixels en dépérissement sur {n_pixels_total} ({pct_dieback:.2f}%)")
+
+        # Plot 1 : Cartes spatiales de dépérissement
+        fig, axs = plt.subplots(1, 2, figsize=(14, 6))
+
+        im0 = axs[0].imshow(dieback_results['dieback_map'], cmap='Reds')
+        axs[0].set_title(f"Carte binaire de dépérissement 2018 ({pct_dieback:.1f}% de la zone)")
+        axs[0].set_xticks([])
+        axs[0].set_yticks([])
+
+        im1 = axs[1].imshow(dieback_results['anomaly_count'], cmap='YlOrRd')
+        axs[1].set_title("Nombre de dates en anomalie par pixel (2018)")
+        axs[1].set_xticks([])
+        axs[1].set_yticks([])
+        plt.colorbar(im1, ax=axs[1], shrink=0.8)
+
+        fig.suptitle("Étape 5 — Détection du dépérissement forestier (Tree Dieback en 2018)", fontsize=14)
+        fig.tight_layout()
+        plt.show()
+
+        # Plot 2 : Profil temporel d'un pixel en fort dépérissement vs référence
+        # Sélection du pixel avec le plus grand nombre d'anomalies
+        r_d, c_d = np.unravel_index(np.argmax(dieback_results['anomaly_count']), dieback_results['anomaly_count'].shape)
+
+        fig, ax = plt.subplots(figsize=(12, 5))
+        obs_px = crswir_2018[:, r_d, c_d]
+        pred_px = ts_hat_2018[:, r_d, c_d]
+        pi_px = pi_2018[:, r_d, c_d]
+
+        ax.scatter(days_2018, obs_px, color="#e67e22", label="CRSWIR 2018 observé", zorder=3)
+        ax.plot(days_2018, pred_px, color="#2c3e50", linewidth=2, label="Modèle harmonique (référence 2016)")
+        ax.fill_between(days_2018, pred_px - pi_px, pred_px + pi_px,
+                        color="#3498db", alpha=0.15, label="Intervalle normal attendu (95%)")
+        ax.plot(days_2018, pred_px + pi_px, color="red", linestyle="--", linewidth=1.5, label="Seuil d'alerte dépérissement")
+        ax.set_ylabel("CRSWIR", fontsize=15)
+        ax.set_title(f"Profil temporel 2018 — Pixel en dépérissement ({r_d}, {c_d})")
+        xticks = np.arange(len(dates_2018))[::6]
+        ax.set_xticks(days_2018[xticks], labels=dates_2018[xticks], rotation=45)
+        ax.xaxis.grid(True, which="major", linestyle="dashed")
+        ax.legend()
+        fig.tight_layout()
+        plt.show()
