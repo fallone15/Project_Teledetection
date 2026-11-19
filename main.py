@@ -236,8 +236,11 @@ if __name__ == "__main__":
                 for band in bands
             )
 
-            # Calcul du CRSWIR 2018
+            # Calcul du CRSWIR et du NDVI 2018
             test_ts[date]['CRSWIR'] = apply_crswir(
+                test_ts[date], preprocess=digital_numbers_to_reflectance
+            )
+            test_ts[date]['NDVI'] = apply_ndvi(
                 test_ts[date], preprocess=digital_numbers_to_reflectance
             )
 
@@ -246,6 +249,7 @@ if __name__ == "__main__":
                 test_ts[date], preprocess=digital_numbers_to_reflectance
             )
             test_ts[date]['CRSWIR'][mask] = np.nan
+            test_ts[date]['NDVI'][mask] = np.nan
             test_ts[date]['mask'] = mask
 
             for band in bands:
@@ -257,6 +261,7 @@ if __name__ == "__main__":
         )
 
         crswir_2018 = np.array([test_ts[date]['CRSWIR'] for date in test_ts])
+        ndvi_2018 = np.array([test_ts[date]['NDVI'] for date in test_ts])
         masks_2018 = np.isnan(crswir_2018)
 
         # 1. Prédire le comportement normal attendu en 2018 avec le modèle harmonique 2016
@@ -343,4 +348,125 @@ if __name__ == "__main__":
         fig.tight_layout()
         fig.savefig(os.path.join(output_fig_dir, "06_dieback_timeseries_2016_2018.png"), dpi=200, bbox_inches="tight")
         print("Enregistré : 06_dieback_timeseries_2016_2018.png")
+        plt.show()
+
+        # ===== Étape 6 : Discrimination Coupes Rases vs Scolytes =====
+        print("\n===== Étape 6 : Discrimination Coupes Rases vs Scolytes =====")
+        clearcut_results = distinguish_clearcut_vs_dieback(
+            ndvi_2018,
+            dieback_results,
+            ndvi_clearcut_threshold=0.30,
+        )
+        n_clearcut = np.sum(clearcut_results['clearcut_map'])
+        n_standing = np.sum(clearcut_results['standing_dieback_map'])
+        pct_clearcut = (n_clearcut / n_pixels_total) * 100
+        pct_standing = (n_standing / n_pixels_total) * 100
+        print(f"Coupes rases détectées (sol nu, NDVI < 0.30)        : {n_clearcut} pixels ({pct_clearcut:.2f}%)")
+        print(f"Dépérissement sur pied (arbres morts, NDVI >= 0.30)  : {n_standing} pixels ({pct_standing:.2f}%)")
+
+        # Plot Étape 6
+        fig, axs = plt.subplots(1, 3, figsize=(18, 5))
+        axs[0].imshow(clearcut_results['clearcut_map'], cmap='YlOrBr')
+        axs[0].set_title(f"Coupes rases — Clearcuts ({pct_clearcut:.1f}%)")
+        axs[0].set_xticks([])
+        axs[0].set_yticks([])
+
+        axs[1].imshow(clearcut_results['standing_dieback_map'], cmap='Reds')
+        axs[1].set_title(f"Dépérissement sur pied ({pct_standing:.1f}%)")
+        axs[1].set_xticks([])
+        axs[1].set_yticks([])
+
+        im_ndvi = axs[2].imshow(clearcut_results['post_ndvi_min'], cmap='RdYlGn', vmin=0.1, vmax=0.8)
+        axs[2].set_title("NDVI post-anomalie minimal")
+        axs[2].set_xticks([])
+        axs[2].set_yticks([])
+        plt.colorbar(im_ndvi, ax=axs[2], shrink=0.8)
+
+        fig.suptitle("Étape 6 — Discrimination : Coupes rases vs Dépérissement sur pied", fontsize=14)
+        fig.tight_layout()
+        fig.savefig(os.path.join(output_fig_dir, "07_step6_clearcut_vs_dieback.png"), dpi=200, bbox_inches="tight")
+        print("Enregistré : 07_step6_clearcut_vs_dieback.png")
+        plt.show()
+
+        # ===== Étape 7 : Discrimination Sécheresse vs Scolytes =====
+        print("\n===== Étape 7 : Discrimination Sécheresse vs Scolytes =====")
+        amplitude_2016 = np.sqrt(coeff[1]**2 + coeff[2]**2)
+        drought_beetle_results = distinguish_drought_vs_bark_beetle(
+            crswir_2018,
+            ts_hat_2018,
+            pi_2018,
+            masks_2018,
+            dates_2018,
+            standing_dieback_map=clearcut_results['standing_dieback_map'],
+            amplitude_2016=amplitude_2016,
+            autumn_start_date='2018-09-15',
+        )
+
+        n_drought = np.sum(drought_beetle_results['drought_map'])
+        n_beetle = np.sum(drought_beetle_results['bark_beetle_map'])
+        n_deciduous = np.sum(drought_beetle_results['deciduous_dieback_map'])
+        pct_drought = (n_drought / n_pixels_total) * 100
+        pct_beetle = (n_beetle / n_pixels_total) * 100
+        pct_deciduous = (n_deciduous / n_pixels_total) * 100
+
+        print(f"Stress sécheresse réversible (récupération automne) : {n_drought} pixels ({pct_drought:.2f}%)")
+        print(f"Attaques de scolytes confirmées (résineux, irrév.)  : {n_beetle} pixels ({pct_beetle:.2f}%)")
+        print(f"Dépérissement feuillus / autres                     : {n_deciduous} pixels ({pct_deciduous:.2f}%)")
+
+        # Plot Étape 7
+        fig, axs = plt.subplots(1, 3, figsize=(18, 5))
+        axs[0].imshow(drought_beetle_results['drought_map'], cmap='YlGn')
+        axs[0].set_title(f"Sécheresse réversible ({pct_drought:.1f}%)")
+        axs[0].set_xticks([])
+        axs[0].set_yticks([])
+
+        axs[1].imshow(drought_beetle_results['is_conifer'], cmap='Greens')
+        axs[1].set_title("Masque des résineux (faible amplitude 2016)")
+        axs[1].set_xticks([])
+        axs[1].set_yticks([])
+
+        axs[2].imshow(drought_beetle_results['bark_beetle_map'], cmap='Reds')
+        axs[2].set_title(f"Attaques de scolytes confirmées ({pct_beetle:.1f}%)")
+        axs[2].set_xticks([])
+        axs[2].set_yticks([])
+
+        fig.suptitle("Étape 7 — Discrimination : Sécheresse vs Scolytes (Ips typographus)", fontsize=14)
+        fig.tight_layout()
+        fig.savefig(os.path.join(output_fig_dir, "08_step7_drought_vs_bark_beetle.png"), dpi=200, bbox_inches="tight")
+        print("Enregistré : 08_step7_drought_vs_bark_beetle.png")
+        plt.show()
+
+        # ===== Synthèse finale multi-classes (Étapes 5, 6, 7) =====
+        print("\n===== Synthèse globale : Cartographie complète des perturbations =====")
+        final_classification = np.zeros(dieback_results['dieback_map'].shape, dtype=int)
+        final_classification[clearcut_results['clearcut_map']] = 1
+        final_classification[drought_beetle_results['drought_map']] = 2
+        final_classification[drought_beetle_results['bark_beetle_map']] = 3
+        final_classification[drought_beetle_results['deciduous_dieback_map']] = 4
+
+        cmap_classes = ListedColormap(['#ecf0f1', '#795548', '#f39c12', '#c0392b', '#8e44ad'])
+        norm_classes = BoundaryNorm([-0.5, 0.5, 1.5, 2.5, 3.5, 4.5], cmap_classes.N)
+
+        fig, ax = plt.subplots(figsize=(10, 8))
+        im_final = ax.imshow(final_classification, cmap=cmap_classes, norm=norm_classes)
+        ax.set_title("Cartographie finale des perturbations forestières 2018 (Vosges / Épinal)\nChaîne complète FORDEAD (Étapes 5, 6 & 7)", fontsize=14, fontweight="bold")
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+        legend_labels = [
+            f"Forêt saine / Non perturbée ({100 - pct_dieback:.1f}%)",
+            f"Coupes rases — Clearcut ({pct_clearcut:.1f}%)",
+            f"Stress sécheresse réversible ({pct_drought:.1f}%)",
+            f"Scolytes sur conifères — Ips typographus ({pct_beetle:.1f}%)",
+            f"Dépérissement feuillus / autre ({pct_deciduous:.1f}%)"
+        ]
+        patches = [
+            mpatches.Patch(color=cmap_classes.colors[i], label=legend_labels[i])
+            for i in range(5)
+        ]
+        ax.legend(handles=patches, bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0., fontsize=11)
+
+        fig.tight_layout()
+        fig.savefig(os.path.join(output_fig_dir, "09_final_forest_classification.png"), dpi=200, bbox_inches="tight")
+        print("Enregistré : 09_final_forest_classification.png")
         plt.show()
