@@ -16,7 +16,14 @@ from preprocess import (
 )
 from utils import dates_to_days
 from harmonic_regression import fit_harmonic_model, pred_harmonic_model
-from anomaly_detection import detect_dieback
+from anomaly_detection import (
+    detect_dieback,
+    distinguish_clearcut_vs_dieback,
+    distinguish_drought_vs_bark_beetle,
+    classify_forest_disturbances,
+)
+import matplotlib.patches as mpatches
+from matplotlib.colors import ListedColormap, BoundaryNorm
 
 if __name__ == "__main__":
     with open('cdse_query.yaml', 'r', encoding='utf-8') as file:
@@ -87,8 +94,12 @@ if __name__ == "__main__":
     height, width = crswir_array.shape[1], crswir_array.shape[2]
     px_coords = height // 2, width // 2
 
+    output_fig_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "figures")
+    os.makedirs(output_fig_dir, exist_ok=True)
+    print(f"Dossier de sauvegarde des figures : {output_fig_dir}")
+
     # Plot the CRSWIR time series
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(10, 5))
     fontsize = 15
     crswir_px = crswir_array[:, px_coords[0], px_coords[1]]
     ax.scatter(days, crswir_px, color="#e67e22")
@@ -98,11 +109,14 @@ if __name__ == "__main__":
     ax.set_xticks(days[xticks], labels=xticklabels, rotation=45)
     ax.xaxis.grid(True, which="major", linestyle="dashed")
     fig.tight_layout()
+    fig.savefig(os.path.join(output_fig_dir, "01_crswir_scatter_2016.png"), dpi=200, bbox_inches="tight")
+    print("Enregistré : 01_crswir_scatter_2016.png")
 
     # Plot RGB composition over the time series
     n_rows, n_cols = 2, 4
     images_per_page = n_rows * n_cols
 
+    page_num = 1
     for start in range(0, n_dates, images_per_page):
         fig, axs = plt.subplots(n_rows, n_cols, figsize=(14, 8))
         page_dates = dates[start:start + images_per_page]
@@ -117,6 +131,9 @@ if __name__ == "__main__":
             ax.set_visible(False)
 
         fig.tight_layout()
+        fig.savefig(os.path.join(output_fig_dir, f"02_rgb_timeseries_page_{page_num}.png"), dpi=150, bbox_inches="tight")
+        print(f"Enregistré : 02_rgb_timeseries_page_{page_num}.png")
+        page_num += 1
 
     plt.show()
 
@@ -154,6 +171,8 @@ if __name__ == "__main__":
     ax.xaxis.grid(True, which="major", linestyle="dashed")
     ax.legend()
     fig.tight_layout()
+    fig.savefig(os.path.join(output_fig_dir, "03_harmonic_regression_pixel_2016.png"), dpi=200, bbox_inches="tight")
+    print("Enregistré : 03_harmonic_regression_pixel_2016.png")
 
     # === Diagnostic : stats du modèle ===
     coeff = harmonic_model['coeff']
@@ -184,6 +203,8 @@ if __name__ == "__main__":
         ax.set_yticks([])
     fig.suptitle("Paramètres du modèle harmonique (CRSWIR)", fontsize=14)
     fig.tight_layout()
+    fig.savefig(os.path.join(output_fig_dir, "04_harmonic_parameters_maps_crswir.png"), dpi=200, bbox_inches="tight")
+    print("Enregistré : 04_harmonic_parameters_maps_crswir.png")
 
     plt.show()
 
@@ -269,6 +290,8 @@ if __name__ == "__main__":
 
         fig.suptitle("Étape 5 — Détection du dépérissement forestier (Tree Dieback en 2018)", fontsize=14)
         fig.tight_layout()
+        fig.savefig(os.path.join(output_fig_dir, "05_dieback_maps_2018.png"), dpi=200, bbox_inches="tight")
+        print("Enregistré : 05_dieback_maps_2018.png")
         plt.show()
 
         # Plot 2 : Série temporelle continue complète (2016 -> 2018)
@@ -318,4 +341,6 @@ if __name__ == "__main__":
         ax.xaxis.grid(True, which="major", linestyle="dashed", alpha=0.5)
         ax.legend(loc="upper left")
         fig.tight_layout()
+        fig.savefig(os.path.join(output_fig_dir, "06_dieback_timeseries_2016_2018.png"), dpi=200, bbox_inches="tight")
+        print("Enregistré : 06_dieback_timeseries_2016_2018.png")
         plt.show()
