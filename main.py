@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 
 from download_from_cdse import query_id
 from spectral_index import apply_ndvi, apply_crswir
+from PIL import Image 
+import re
 from preprocess import (
     digital_numbers_to_reflectance,
     apply_cloud_mask,
@@ -299,6 +301,8 @@ if __name__ == "__main__":
         print("Enregistré : 05_dieback_maps_2018.png")
         plt.show()
 
+        """--------------------------------------------------------------------------------------------------------------------------------------------"""
+
         # Plot 2 : Série temporelle continue complète (2016 -> 2018)
         # Montre la transition entre la période saine de référence et le décrochage en 2018
         r_d, c_d = np.unravel_index(np.argmax(dieback_results['anomaly_count']), dieback_results['anomaly_count'].shape)
@@ -470,3 +474,78 @@ if __name__ == "__main__":
         fig.savefig(os.path.join(output_fig_dir, "09_final_forest_classification.png"), dpi=200, bbox_inches="tight")
         print("Enregistré : 09_final_forest_classification.png")
         plt.show()
+
+     
+# ===== Étape 8 : Création du GIF avec toutes les figures =====
+
+# ===== Étape 8 : Création du GIF journalier =====
+
+rgb_frames = []
+
+# 1. Images RGB de 2016 (déjà calculées dans le programme)
+for date, data in train_ts.items():
+    rgb_frames.append((date, data["RGB"]))
+
+# 2. Images RGB de 2018 (recalculées ici, sans modifier le traitement précédent)
+if len(years) > 1:
+    test_data_folder = os.path.join(data_folder, years[1])
+
+    for date in sorted(test_ts.keys()):
+        rasters = {}
+
+        try:
+            # Rouvrir les bandes Sentinel-2
+            for band in bands:
+                path = os.path.join(
+                    test_data_folder,
+                    band,
+                    f"SENTINEL2_L2A_{band}_{date}Z.tif"
+                )
+                rasters[band] = rasterio.open(path)
+
+            # Recalculer le masque et l'image RGB
+            mask = apply_cloud_mask(
+                rasters,
+                preprocess=digital_numbers_to_reflectance
+            )
+
+            rgb = apply_rgb_compo(
+                rasters,
+                preprocess=digital_numbers_to_reflectance,
+                mask=mask
+            )
+
+            rgb_frames.append((date, rgb))
+
+        finally:
+            for raster in rasters.values():
+                raster.close()
+
+# 3. Trier toutes les images par date
+rgb_frames.sort(key=lambda item: item[0])
+
+# 4. Transformer les images en frames du GIF
+frames = []
+
+for date, rgb in rgb_frames:
+    rgb = np.asarray(rgb)
+
+    if rgb.dtype != np.uint8:
+        rgb = np.clip(rgb, 0, 255).astype(np.uint8)
+
+    image = Image.fromarray(rgb).convert("RGB")
+    frames.append(image)
+
+# 5. Créer le GIF
+if frames:
+    frames[0].save(
+        os.path.join(output_fig_dir, "animation_journaliere.gif"),
+        save_all=True,
+        append_images=frames[1:],
+        duration=500,
+        loop=0
+    )
+
+    print(f"GIF créé avec {len(frames)} acquisitions.")
+else:
+    print("Aucune image RGB disponible.")
