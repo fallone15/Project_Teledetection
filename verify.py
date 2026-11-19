@@ -16,13 +16,15 @@ with open("cdse_query.yaml", encoding="utf-8") as f:
     query = yaml.safe_load(f)
 
 dossier = Path(query["data_folder"]) / query_id(query, temporal_id=False)
+dossier_2018 = dossier / "2018-01-01-2019-01-01"
+
 images = sorted(
-    dossier.glob("*/B02/SENTINEL2_L2A_B02_*Z.tif"),
+    dossier_2018.glob("B02/SENTINEL2_L2A_B02_*Z.tif"),
     key=lambda p: p.name,
 )
 
 if not images:
-    raise FileNotFoundError(f"Aucune image B02 trouvée dans {dossier}")
+    raise FileNotFoundError(f"Aucune image B02 trouvée pour 2018 dans {dossier_2018}")
 
 for debut in range(0, len(images), 4):
     page = images[debut:debut + 4]
@@ -38,7 +40,7 @@ for debut in range(0, len(images), 4):
                 bande: stack.enter_context(rasterio.open(
                     dossier_date / bande / f"SENTINEL2_L2A_{bande}_{date}Z.tif"
                 ))
-                for bande in ("B02", "B03", "B04", "B08")
+                for bande in ("B02", "B03", "B04", "B08", "B11")
             }
             original = apply_rgb_compo(
                 rasters, preprocess=digital_numbers_to_reflectance
@@ -57,7 +59,7 @@ for debut in range(0, len(images), 4):
         for ax in axes[:, col]:
             ax.axis("off")
 
-    fig.suptitle("En haut : RGB original · En bas : pixels exclus en rouge")
+    fig.suptitle(f"Données 2018 — En haut : RGB original · En bas : pixels exclus en rouge ({debut + 1}-{debut + len(page)} / {len(images)})")
     fig.tight_layout()
     plt.show()
     plt.close(fig)

@@ -271,25 +271,51 @@ if __name__ == "__main__":
         fig.tight_layout()
         plt.show()
 
-        # Plot 2 : Profil temporel d'un pixel en fort dépérissement vs référence
-        # Sélection du pixel avec le plus grand nombre d'anomalies
+        # Plot 2 : Série temporelle continue complète (2016 -> 2018)
+        # Montre la transition entre la période saine de référence et le décrochage en 2018
         r_d, c_d = np.unravel_index(np.argmax(dieback_results['anomaly_count']), dieback_results['anomaly_count'].shape)
 
-        fig, ax = plt.subplots(figsize=(12, 5))
-        obs_px = crswir_2018[:, r_d, c_d]
-        pred_px = ts_hat_2018[:, r_d, c_d]
-        pi_px = pi_2018[:, r_d, c_d]
+        # Concaténer 2016-2017 et 2018
+        all_days = np.concatenate([days, days_2018])
+        all_dates = np.concatenate([dates, dates_2018])
+        all_pred_px = np.concatenate([ts_hat[:, r_d, c_d], ts_hat_2018[:, r_d, c_d]])
+        all_pi_px = np.concatenate([pred_interval[:, r_d, c_d], pi_2018[:, r_d, c_d]])
 
-        ax.scatter(days_2018, obs_px, color="#e67e22", label="CRSWIR 2018 observé", zorder=3)
-        ax.plot(days_2018, pred_px, color="#2c3e50", linewidth=2, label="Modèle harmonique (référence 2016)")
-        ax.fill_between(days_2018, pred_px - pi_px, pred_px + pi_px,
-                        color="#3498db", alpha=0.15, label="Intervalle normal attendu (95%)")
-        ax.plot(days_2018, pred_px + pi_px, color="red", linestyle="--", linewidth=1.5, label="Seuil d'alerte dépérissement")
-        ax.set_ylabel("CRSWIR", fontsize=15)
-        ax.set_title(f"Profil temporel 2018 — Pixel en dépérissement ({r_d}, {c_d})")
-        xticks = np.arange(len(dates_2018))[::6]
-        ax.set_xticks(days_2018[xticks], labels=dates_2018[xticks], rotation=45)
-        ax.xaxis.grid(True, which="major", linestyle="dashed")
-        ax.legend()
+        sort_idx = np.argsort(all_days)
+        all_days = all_days[sort_idx]
+        all_dates = all_dates[sort_idx]
+        all_pred_px = all_pred_px[sort_idx]
+        all_pi_px = all_pi_px[sort_idx]
+
+        fig, ax = plt.subplots(figsize=(15, 6))
+
+        # 1. Données 2016-2017 (période de référence saine en vert)
+        ax.scatter(days, crswir_array[:, r_d, c_d], color="#27ae60", label="2016–2017 : Observations saines (référence)", zorder=3, alpha=0.85)
+
+        # 2. Données 2018 : normales (orange) vs anomalies (triangles rouges)
+        obs_18 = crswir_2018[:, r_d, c_d]
+        upper_18 = ts_hat_2018[:, r_d, c_d] + pi_2018[:, r_d, c_d]
+        is_anomaly_18 = (obs_18 > upper_18) & ~masks_2018[:, r_d, c_d]
+        is_normal_18 = ~is_anomaly_18 & ~masks_2018[:, r_d, c_d]
+
+        ax.scatter(days_2018[is_normal_18], obs_18[is_normal_18], color="#e67e22", label="2018 : Observations dans la norme", zorder=3)
+        ax.scatter(days_2018[is_anomaly_18], obs_18[is_anomaly_18], color="#c0392b", marker="^", s=80, label="2018 : Anomalies (Dépérissement détecté)", zorder=4)
+
+        # 3. Modèle harmonique continu et son enveloppe à 95%
+        ax.plot(all_days, all_pred_px, color="#2c3e50", linewidth=2, label="Modèle harmonique (calibré sur 2016)")
+        ax.fill_between(all_days, all_pred_px - all_pi_px, all_pred_px + all_pi_px,
+                        color="#3498db", alpha=0.15, label="Intervalle normal attendu à 95%")
+        ax.plot(all_days, all_pred_px + all_pi_px, color="#e74c3c", linestyle="--", linewidth=1.5, label="Seuil haut d'alerte")
+
+        # Séparation visuelle entre 2016-2017 et 2018
+        split_day = days_2018[0]
+        ax.axvline(split_day, color="black", linestyle=":", linewidth=2, label="Début 2018")
+
+        ax.set_ylabel("CRSWIR", fontsize=14)
+        ax.set_title(f"Suivi temporel continu (2016 → 2018) — Pixel ({r_d}, {c_d}) en dépérissement", fontsize=14, fontweight="bold")
+        xticks = np.arange(len(all_dates))[::8]
+        ax.set_xticks(all_days[xticks], labels=all_dates[xticks], rotation=45)
+        ax.xaxis.grid(True, which="major", linestyle="dashed", alpha=0.5)
+        ax.legend(loc="upper left")
         fig.tight_layout()
         plt.show()
