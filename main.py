@@ -15,6 +15,7 @@ from preprocess import (
     apply_rgb_compo,
 )
 from utils import dates_to_days
+from harmonic_regression import fit_harmonic_model, pred_harmonic_model
 
 if __name__ == "__main__":
     with open('cdse_query.yaml', 'r', encoding='utf-8') as file:
@@ -112,5 +113,73 @@ if __name__ == "__main__":
             ax.set_visible(False)
 
         fig.tight_layout()
+
+    plt.show()
+
+    # ===== Étape 3 : Régression harmonique sur les données 2016 =====
+
+    # Masques : True = pixel invalide (NaN dans le NDVI)
+    masks_array = np.isnan(ndvi_array)
+
+    # Fit du modèle sur tous les pixels de l'image
+    print("Fitting du modèle harmonique...")
+    harmonic_model = fit_harmonic_model(days, ndvi_array, masks_array)
+    print("Fit terminé !")
+
+    # Prédictions sur les mêmes dates (pour visualiser l'ajustement)
+    predictions = pred_harmonic_model(days, harmonic_model)
+    ts_hat = predictions['ts_hat']
+    pred_interval = predictions['prediction_interval']
+
+    # === Plot 1 : NDVI observé vs modèle pour le pixel central ===
+    fig, ax = plt.subplots(figsize=(12, 5))
+    r, c = px_coords
+
+    ndvi_px = ndvi_array[:, r, c]
+    hat_px = ts_hat[:, r, c]
+    pi_px = pred_interval[:, r, c]
+
+    ax.scatter(days, ndvi_px, color="#8fc0a9", label="NDVI observé", zorder=3)
+    ax.plot(days, hat_px, color="#c83349", linewidth=2, label="Modèle harmonique")
+    ax.fill_between(days, hat_px - pi_px, hat_px + pi_px,
+                     color="#c83349", alpha=0.15, label="Intervalle de prédiction 95%")
+    ax.set_ylabel("NDVI", fontsize=15)
+    ax.set_ylim([-0.2, 1.1])
+    ax.set_title(f"Régression harmonique — pixel ({r}, {c})")
+    xticks = np.arange(len(dates))[::6]
+    ax.set_xticks(days[xticks], labels=dates[xticks], rotation=45)
+    ax.xaxis.grid(True, which="major", linestyle="dashed")
+    ax.legend()
+    fig.tight_layout()
+
+    # === Diagnostic : stats du modèle ===
+    coeff = harmonic_model['coeff']
+    amplitude = np.sqrt(coeff[1]**2 + coeff[2]**2)
+    std = harmonic_model['std_hat']
+    print(f"a0 (moyenne NDVI)  : min={np.nanmin(coeff[0]):.3f}  max={np.nanmax(coeff[0]):.3f}  median={np.nanmedian(coeff[0]):.3f}")
+    print(f"Amplitude          : min={np.nanmin(amplitude):.3f}  max={np.nanmax(amplitude):.3f}  median={np.nanmedian(amplitude):.3f}")
+    print(f"σ̂ (résidus)        : min={np.nanmin(std):.3f}  max={np.nanmax(std):.3f}  median={np.nanmedian(std):.3f}")
+    print(f"Degrés de liberté  : min={np.nanmin(harmonic_model['df']):.0f}  max={np.nanmax(harmonic_model['df']):.0f}")
+
+    # === Plot 2 : Carte des coefficients du modèle ===
+    fig, axs = plt.subplots(1, 3, figsize=(15, 4))
+
+    im0 = axs[0].imshow(coeff[0], cmap='YlGn', vmin=0, vmax=1)
+    axs[0].set_title("a₀ — Moyenne NDVI annuelle")
+    plt.colorbar(im0, ax=axs[0], shrink=0.8)
+
+    im1 = axs[1].imshow(amplitude, cmap='OrRd', vmin=0, vmax=np.nanpercentile(amplitude, 98))
+    axs[1].set_title("Amplitude du cycle annuel")
+    plt.colorbar(im1, ax=axs[1], shrink=0.8)
+
+    im2 = axs[2].imshow(std, cmap='Reds', vmin=0, vmax=np.nanpercentile(std, 98))
+    axs[2].set_title("σ̂ — Écart-type résiduel")
+    plt.colorbar(im2, ax=axs[2], shrink=0.8)
+
+    for ax in axs:
+        ax.set_xticks([])
+        ax.set_yticks([])
+    fig.suptitle("Paramètres du modèle harmonique", fontsize=14)
+    fig.tight_layout()
 
     plt.show()
