@@ -70,6 +70,7 @@ def apply_cloud_mask(
     )
     non_vegetation = (ndvi < 0.3) & ~invalid
     return invalid | clouds | non_vegetation
+#on n'a pas besoin de refaire pour la non-végétation 
 
 def apply_rgb_compo(
     rasters: Dict[str, rasterio.io.DatasetReader],

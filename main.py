@@ -35,6 +35,8 @@ if __name__ == "__main__":
     img_files = list(job_results['assets'].keys())
     img_dates = [file.split('_')[-1].split('Z')[0] for file in img_files]
 
+
+    reflectance_ts = {}
     # Make Sentinel-2 time series
     train_ts = {}
     for date in img_dates:
@@ -75,6 +77,26 @@ if __name__ == "__main__":
     days = dates_to_days(
         np.array([datetime.strptime(date, '%Y-%m-%d') for date in train_ts])
     )
+    
+    """--------------------------------------------------------------------------------------
+    """
+    # Stocker les réflectances de chaque bande
+    reflectance_ts[date] = {}
+
+    for band in bands:
+        raw = train_ts[date][band].read(1, masked=True)
+
+        reflectance = digital_numbers_to_reflectance(
+            raw.astype(np.float32)
+        )
+
+        reflectance_ts[date][band] = np.ma.asarray(
+            reflectance
+        ).filled(np.nan)
+
+
+
+    """--------------------------------------------------------------------------------------"""
 
     # Make a raster of size (n_days, height, width) of NDVI
     ndvi_array = np.array([train_ts[date]['NDVI'] for date in train_ts])
@@ -113,4 +135,26 @@ if __name__ == "__main__":
 
         fig.tight_layout()
 
+    plt.show()
+
+    # Histogrammes de réflectance pour comparer les valeurs seuils
+    # Afficher les histogrammes de réflectance
+
+    date = list(reflectance_ts.keys())[0]
+
+    band = "B02"
+
+    reflectance = reflectance_ts[date][band]
+
+    # Enlever les valeurs invalides
+    values = reflectance[np.isfinite(reflectance)]
+
+    plt.figure(figsize=(8, 5))
+
+    plt.hist(values, bins=50, color="skyblue", edgecolor="black")
+
+    plt.xlabel("Réflectance")
+    plt.ylabel("Nombre de pixels")
+    plt.title(f"Histogramme de réflectance {band} - {date}")
+    
     plt.show()
