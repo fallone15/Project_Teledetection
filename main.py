@@ -171,7 +171,7 @@ if __name__ == "__main__":
     ax.xaxis.grid(True, which="major", linestyle="dashed")
     ax.legend()
     fig.tight_layout()
-    fig.savefig(os.path.join(output_fig_dir, "03_harmonic_regression_pixel_2016.png"), dpi=200, bbox_inches="tight")
+    fig.savefig(os.path.join(output_fig_dir, "04_harmonic_regression_pixel_2016.png"), dpi=200, bbox_inches="tight")
     print("Enregistré : 03_harmonic_regression_pixel_2016.png")
 
     # === Diagnostic : stats du modèle ===
@@ -432,7 +432,7 @@ if __name__ == "__main__":
 
         fig.suptitle("Étape 7 — Discrimination : Sécheresse vs Scolytes (Ips typographus)", fontsize=14)
         fig.tight_layout()
-        fig.savefig(os.path.join(output_fig_dir, "08_step7_drought_vs_bark_beetle.png"), dpi=200, bbox_inches="tight")
+        fig.savefig(os.path.join(output_fig_dir, "09_step7_drought_vs_bark_beetle.png"), dpi=200, bbox_inches="tight")
         print("Enregistré : 08_step7_drought_vs_bark_beetle.png")
         plt.show()
 

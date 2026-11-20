@@ -45,7 +45,7 @@ def detect_dieback(
     anomaly_count = np.sum(anomaly_mask, axis=0)
 
     # Carte binaire de dépérissement : le pixel a au moins une anomalie en 2018
-    dieback_map = anomaly_count > 0
+    dieback_map = anomaly_count > 2
 
     # Excès maximal au-dessus du seuil haut
     excess = np.where(anomaly_mask, obs_crswir - upper_threshold, 0.0)

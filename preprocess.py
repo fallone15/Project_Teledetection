@@ -68,7 +68,7 @@ def apply_cloud_mask(
         & (ndvi < 0.4)
         & ~invalid
     )
-    non_vegetation = (ndvi < 0.3) & ~invalid
+    non_vegetation = (ndvi < 0.2) & ~invalid
     return invalid | clouds | non_vegetation
 
 def apply_rgb_compo(
