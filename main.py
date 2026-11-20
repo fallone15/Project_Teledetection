@@ -447,7 +447,55 @@ if __name__ == "__main__":
         final_classification[drought_beetle_results['drought_map']] = 2
         final_classification[drought_beetle_results['bark_beetle_map']] = 3
         final_classification[drought_beetle_results['deciduous_dieback_map']] = 4
+                # ===== Export de la classification pour QGIS =====
 
+        reference_band = "B8A"
+        reference_date = str(dates_2018[0])
+
+        reference_path = os.path.join(
+            test_data_folder,
+            reference_band,
+            f"SENTINEL2_L2A_{reference_band}_{reference_date}Z.tif"
+        )
+
+        output_tif = os.path.join(
+            output_fig_dir,
+            "classification_forestiere_2018.tif"
+        )
+
+        with rasterio.open(reference_path) as src:
+            if (src.height != final_classification.shape[0] or
+                    src.width != final_classification.shape[1]):
+                raise ValueError(
+                    "Les dimensions de la classification ne correspondent "
+                    "pas au raster B8A de référence."
+                )
+
+            profile = src.profile.copy()
+            profile.update(
+                driver="GTiff",
+                count=1,
+                dtype="uint8",
+                nodata=255,
+                compress="lzw"
+            )
+
+            classification_export = final_classification.astype(np.uint8)
+            no_data_mask = np.all(masks_2018, axis=0)
+            classification_export[no_data_mask] = 255
+
+            with rasterio.open(output_tif, "w", **profile) as dst:
+                dst.write(classification_export, 1)
+
+        print(f"Raster QGIS enregistré : {output_tif}")
+
+
+                    
+
+
+
+
+        
         cmap_classes = ListedColormap(['#ecf0f1', '#795548', '#f39c12', '#c0392b', '#8e44ad'])
         norm_classes = BoundaryNorm([-0.5, 0.5, 1.5, 2.5, 3.5, 4.5], cmap_classes.N)
 
@@ -475,7 +523,7 @@ if __name__ == "__main__":
         print("Enregistré : 09_final_forest_classification.png")
         plt.show()
 
-     
+    """
 # ===== Étape 8 : Création du GIF avec toutes les figures =====
 
 # ===== Étape 8 : Création du GIF journalier =====
@@ -548,4 +596,4 @@ if frames:
 
     print(f"GIF créé avec {len(frames)} acquisitions.")
 else:
-    print("Aucune image RGB disponible.")
+    print("Aucune image RGB disponible.")"""
